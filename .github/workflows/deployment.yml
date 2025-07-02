@@ -1,0 +1,109 @@
+name: Auto-Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - release
+      - hot-fix
+
+jobs:
+  code_quality_check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Use Node.js v20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          
+      - name: Checkout head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          npm install -g eslint
+          pip install pylint
+
+      - name: Lint JavaScript files
+        run: |
+          set -e
+          git diff --name-only --diff-filter=ACMRT HEAD~1 HEAD | grep -E '\.js$' | grep -v '\.cy\.js$' | while IFS= read -r file; do
+            output=$(npx eslint --config=./eslint.config.js "$file")
+            echo "$output"
+            total_errors_warnings=$(echo "$output" | grep -Eo '[0-9]+ (error|warning)' | awk '{sum += $1} END {print sum}')
+            if [ "${total_errors_warnings:-0}" -gt 90 ]; then
+              echo "Linting problems are not within acceptable range (>90) for file: $file. Failing the job."
+              exit 1
+            fi
+          done || exit 1
+
+      - name: Lint Python files
+        run: |
+          set -e
+          git diff --name-only --diff-filter=ACMRT HEAD~1 HEAD | grep '.py$' | while IFS= read -r file; do
+            output=$(pylint "$file")
+            echo "$output"
+            rating=$(echo "$output" | grep 'rated at' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+            if (( $(echo "$rating < 6" | bc -l) )); then
+              echo "Linting rating is less than 6 for file: $file. Failing the job."
+              exit 1
+            fi
+          done || exit 1
+
+  code_quality:
+    runs-on: ubuntu-latest
+    needs:
+      - code_quality_check
+    steps:
+      - name: Use Node.js v20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          
+      - name: Checkout head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          npm install -g eslint
+          pip install pylint
+
+      - name: Lint JavaScript files
+        run: |
+          set -e
+          git diff --name-only --diff-filter=ACMRT HEAD~1 HEAD | grep -E '\.js$' | grep -v '\.cy\.js$' | while IFS= read -r file; do
+            output=$(npx eslint --config=./eslint.config.js "$file")
+            echo "$output"
+            total_errors_warnings=$(echo "$output" | grep -Eo '[0-9]+ (error|warning)' | awk '{sum += $1} END {print sum}')
+            if [ "${total_errors_warnings:-0}" -gt 90 ]; then
+              echo "Linting problems are not within acceptable range (>90) for file: $file. Failing the job."
+              exit 1
+            fi
+          done || exit 1
+
+      - name: Lint Python files
+        run: |
+          set -e
+          git diff --name-only --diff-filter=ACMRT HEAD~1 HEAD | grep '.py$' | while IFS= read -r file; do
+            output=$(pylint "$file")
+            echo "$output"
+            rating=$(echo "$output" | grep 'rated at' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+            if (( $(echo "$rating < 6" | bc -l) )); then
+              echo "Linting rating is less than 6 for file: $file. Failing the job."
+              exit 1
+            fi
+          done || exit 1
+
+  delay_gate_check:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Hold for 3 minutes
+          run: |
+            echo "Delaying for 3 minutes..."
+            sleep 180

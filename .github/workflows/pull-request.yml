@@ -1,0 +1,42 @@
+# .github/workflows/prevent-pr-merge-if-ci-running.yml
+name: Block PR If Target Branch Has Running Actions
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  actions: read  # Needed to read workflow runs
+
+jobs:
+  block-if-ci-running:
+    name: Check Target Branch for Running CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait 15 seconds to avoid race condition
+        run: sleep 15
+
+      - name: Check running workflows on target branch
+        run: |
+          TARGET_BRANCH="${{ github.event.pull_request.base.ref }}"
+          REPO="${{ github.repository }}"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+
+          echo "Checking for running workflows on branch: $TARGET_BRANCH"
+
+          response=$(curl -s -H "Authorization: token $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/runs?branch=$TARGET_BRANCH&status=in_progress")
+
+          echo "Response:"
+          echo "$response"
+
+          running_count=$(echo "$response" | jq '.total_count')
+          echo "Active workflows on $TARGET_BRANCH: $running_count"
+
+          if [ "$running_count" -gt 0 ]; then
+            echo "CI is still running on branch $TARGET_BRANCH. Failing job."
+            exit 1
+          else
+            echo "No running workflows found on $TARGET_BRANCH. Job will pass."
+          fi
